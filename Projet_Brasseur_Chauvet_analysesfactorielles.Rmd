@@ -1,0 +1,476 @@
+---
+title: "Projet Analyse de données exploratoire"
+subtitle: "**Etude de la base de données *Onlinenewspopularity* **"
+author: "Léa BRASSEUR & Benjamin CHAUVET"
+date: ' '
+lang: "fr"
+fontsize: 11pt
+geometry: a4paper,top=2cm,bottom=2cm,left=1.5cm,right=1.5cm
+header-includes: 
+- \usepackage{float} 
+- \floatplacement{figure}{H} 
+- \floatplacement{table}{H} 
+output:
+  html_document: 
+    toc: true
+    toc_float: true
+    number_section: false
+    highlight: "espresso"
+    theme: flatly
+    df_print: paged
+    dev: png
+  pdf_document: 
+    toc: false
+    number_section: true 
+    keep_tex: true
+editor_options: 
+  chunk_output_type: inline
+---
+
+```{r setup, echo = FALSE}
+knitr::opts_chunk$set(warning = FALSE, message = FALSE, fig.align="center")
+```
+
+```{r, echo = FALSE}
+library(FactoMineR)
+library(factoextra)
+library(corrplot)
+library(kableExtra)
+library(DT)
+library(ggplot2)
+library(gridExtra)
+library(tidyr)
+library(ggcorrplot)
+library(GGally)
+library(dplyr)
+library(stringr)
+library(gplots)
+library(stargazer)
+library(ggpubr)
+```
+
+```{r, echo = FALSE}
+df <- read.table(file="OnlineNewsPopularity.csv", sep=",",dec=".",header=TRUE)
+```
+
+```{r,echo = FALSE}
+dfbis <- df[,-c(1,2)] 
+```
+
+```{r, echo=FALSE}
+dfbis <- dfbis[dfbis$n_tokens_content>0,]
+```
+
+```{r, echo = FALSE}
+dfbis$data_channel_is_lifestyle[dfbis$data_channel_is_lifestyle==1] <- 1
+dfbis$data_channel_is_entertainment[dfbis$data_channel_is_entertainment==1] <- 2
+dfbis$data_channel_is_bus[dfbis$data_channel_is_bus==1] <- 3
+dfbis$data_channel_is_socmed[dfbis$data_channel_is_socmed==1] <- 4
+dfbis$data_channel_is_tech[dfbis$data_channel_is_tech==1] <- 5
+dfbis$data_channel_is_world[dfbis$data_channel_is_world==1] <-  6
+dfbis$channel <- rowSums(dfbis[,12:17])
+   
+dfbis$channel[dfbis$channel==1] <- "Lifestyle"
+dfbis$channel[dfbis$channel==2] <- "Entertainment"
+dfbis$channel[dfbis$channel==3] <- "Business"
+dfbis$channel[dfbis$channel==4] <- "Social Media"
+dfbis$channel[dfbis$channel==5] <- "Tech"
+dfbis$channel[dfbis$channel==6] <- "World"
+dfbis$channel[dfbis$channel==0] <- "Autre"
+dfbis <- dfbis[,-c(12:17)]
+```
+```{r, echo = FALSE}
+dfbis$weekday_is_monday[dfbis$weekday_is_monday==1] <- 1
+dfbis$weekday_is_tuesday[dfbis$weekday_is_tuesday==1] <- 2
+dfbis$weekday_is_wednesday[dfbis$weekday_is_wednesday==1] <- 3
+dfbis$weekday_is_thursday[dfbis$weekday_is_thursday==1] <- 4
+dfbis$weekday_is_friday[dfbis$weekday_is_friday==1] <- 5
+dfbis$weekday_is_saturday[dfbis$weekday_is_saturday==1] <- 6
+dfbis$weekday_is_sunday[dfbis$weekday_is_sunday==1] <- 7
+dfbis$weekday <- rowSums(dfbis[,24:30])
+
+dfbis$weekday[dfbis$weekday==1] <- "Lundi"
+dfbis$weekday[dfbis$weekday==2] <- "Mardi"
+dfbis$weekday[dfbis$weekday==3] <- "Mercredi"
+dfbis$weekday[dfbis$weekday==4] <- "Jeudi"
+dfbis$weekday[dfbis$weekday==5] <- "Vendredi"
+dfbis$weekday[dfbis$weekday==6] <- "Samedi"
+dfbis$weekday[dfbis$weekday==7] <- "Dimanche"
+dfbis <- dfbis[,-c(24:30)]
+```
+
+```{r, echo = FALSE}
+dfbis$is_weekend[dfbis$is_weekend==0] <- "Semaine"
+dfbis$is_weekend[dfbis$is_weekend==1] <- "Weekend"
+```
+
+```{r, echo = FALSE}
+dfbis[,49] <- colnames("Popularity")
+dfbis$popularity[dfbis$shares>=1400] <- "Popular"
+dfbis$popularity[dfbis$shares<1400] <- "Unpopular"
+```
+
+# Introduction 
+## Plan 
+
+Suite à notre analyse descriptive, nous allons maintenant faire des analyses factorielles détaillées sur nos données. Dans un premier temps une ACP sera réalisée. Elle sera basée sur la matrice des corrélations et nous permettra de voir la répartition des individus en fonction des variables choisies. Dans un second temps, nous ferons une AFC qui servira à illustrer les résultats trouvés dans les statistiques descriptives. Et enfin, une ACM qui complètera l'AFC.
+
+## Recodage de variable
+
+Tout d'abord, nous nous sommes rendu compte que la façon dont nous avons codé la variable **popularity** n'était pas la plus judicieuse. Nous avions choisi les classes seulement en fonction de la médiane sans prendre en compte la densité de la variable **share**. 
+En effet, la répartition difforme du nombre de partages nécessite de créer des classes inégales.
+Nous avons donc décidé de créer une nouvelle variable et de la coder d'une manière différente, avec maintenant 3 modalités au lieu de 2 comme fait auparavant. 
+
+```{r ,echo = FALSE, fig.width=5,fig.height=4}
+g1 <- ggplot(dfbis, aes(x=shares))+ geom_density() + theme_minimal() + labs(title = "Densité des partages", x = "Partages", y = "Densité") + theme(axis.text.x = element_text(angle = 35))
+g2 <- ggplot(dfbis, aes(x=shares))+ geom_density() + theme_minimal() + labs(title = "Densité des partages (zoom)", x = "Partages", y = "Densité") + xlim(0,20000) + theme(axis.text.x = element_text(angle = 35))
+grid.arrange(g1,g2,nrow=1)
+```
+```{r, echo = FALSE}
+tab <- t(quantile(dfbis$shares,probs = seq(0, 1, 0.1)))
+tab %>% kable(caption = "Quantiles des partages") %>% 
+  kable_styling(
+  full_width = FALSE, position = "center",bootstrap_options = c("striped", "hover")) 
+```
+```{r, echo = FALSE}
+dfbis[,50] <- colnames("Popularity2")
+dfbis$popularity2[dfbis$shares<=1400] <- "Unpopular"
+dfbis$popularity2[dfbis$shares>1400 & dfbis$shares<6100] <- "Popular"
+dfbis$popularity2[dfbis$shares>=6100] <- "Very popular"
+```
+
+Nous nous sommes servis des graphiques et tableaux précédents pour créer la variable **popularity2**. En effet, la classe *unpopular* est consitutée des partages allant de 1 à la médiane (1400), la classe *popular* quant à elle s'étend de la médiane jusqu'à 6100 partages puis la dernière classe *very popular* démarre à 6100 inclu jusqu'au plus grand nombre de partages, 843 300, ce qui représente le dernier décile.
+
+
+```{r, echo = FALSE}
+table1 <- table(dfbis$popularity2)
+table2 <- round(prop.table(table(dfbis$popularity2)),3)
+dftable <- data.frame(rbind(table1, table2),row.names = c("Effectif","Proportion"))
+dftable[,c(2,1,3)] %>% kable(caption = "Répartition de la variable popularity2") %>% kable_styling(full_width = FALSE, position = "center",bootstrap_options = c("striped", "hover"))
+```
+
+Grâce au tableau, nous voyons que la classe *unpopular* représente la moitié de l'effectif total, la classe *popular* 40% et la classe *very popular* 10% comme il s'agit du dernier décile. 
+<br>
+
+# ACP
+
+Dans cette ACP nous avons choisi les variables qui avaient l'air d'être le plus corrélées entre elles d'après la matrice des corrélations. 
+
+```{r, echo=FALSE, fig.height=5,fig.width=5}
+ggcorr(dfbis[,c(30,31,34:35,42:45)],name = "corr", hjust = 1, angle = 0, low = "darkmagenta", mid = "white", high = "royalblue4") + ggtitle("Zoom sur une partie de la matrice des corrélations")
+```
+
+Nous remarquons de fortes corrélations positives entre **title_subjectivity** et **abs_title_sentiment_polarity**, puis entre **rate_positive_words** et **global_sentiment_polarity** et de fortes corrélations négatives entre **rate_negative_words** et **global_sentiment_polarity**  puis entre **rate_negative_words** et **rate_positive_words**, ce qui semble normal puisqu'un haut taux de mots positifs induit un taux de mots négatifs plus bas. Si nous supposons que **global_sentiment_polarity** se rapporte au sentiment qu'à le lecteur après avoir lu l'article il est logique que la corrélation avec les mots positifs soit positive et qu'avec les mots négatifs elle soit négative. 
+
+Nous nous intéressons donc aux variables qui traitent le taux de mots positifs ou négatifs, ainsi qu'aux variables portant sur la subjectivité et sur la polarité.
+
+## Un premier visuel 
+
+```{r, echo = FALSE, include = FALSE}
+dfacp1 <- dfbis[,c(30,31,34:35,42:45)]
+acpa <- PCA(dfacp1,graph=F)
+```
+
+```{r, echo = FALSE}
+acpvariable <- fviz_pca_var(acpa,repel=T)
+acpindividu <- fviz_pca_ind(acpa, geom.ind = "point", col.ind = "black" )
+grid.arrange(acpvariable, acpindividu, nrow = 1)
+```
+
+## Les valeurs propres et interties relatives de chaques axes 
+ 
+```{r, echo = FALSE}
+fviz_eig(acpa, addlabels = TRUE, ylim = c(0, 50),barfill = "royalblue4", barcolor="white")
+```
+
+Nous pouvons voir que les 2 premiers axes cumulent 64% de l'inertie, respectivement 36.3% pour la dimension 1 et 27.8% pour la dimension 2. De plus, le 3e axe possède une inertie de 12.5% ce qui est largement plus bas que les valeurs précédentes. Nous conservons donc les 2 premiers axes. 
+
+## Les variables 
+### Représentation 
+
+```{r, echo = FALSE}
+fviz_pca_var(acpa, col.var="cos2",gradient.cols = c("slategray2", "royalblue1", "royalblue4"),repel = T)
+```
+
+Nous retrouvons nos conclusions faites sur la matrice des corrélations et nous voyons que les variables sont plus ou moins bien représentées. 
+
+### Qualité de représentation
+
+Nous pouvons voir grâce au cercle et à la longueur des flèches que les variables sont majoritairement bien représentées et affichent un cos2 plutôt élevé dans les dimensions 1 et 2, excepté la variable **global_subjectivity**. 
+Le graphique ci-dessous confirme nos interprétations.
+
+```{r, echo = FALSE, include = FALSE}
+var <- get_pca_var(acpa)
+```
+
+```{r, echo = FALSE}
+ggcorrplot(var$cos2,method = "circle" ,ggtheme = theme_minimal, tl.col="black", colors=c("darkmagenta", "white","royalblue4"), legend.title = "cos2")
+```
+
+### Contributions aux axes principaux 
+
+```{r, echo = FALSE}
+contrib1 <- fviz_contrib(acpa, choice = "var", axes = 1, color = "white",fill = "royalblue4",title="Contribution des variables \n sur la dimension 1", ylim=c(0,30))
+contrib2 <- fviz_contrib(acpa, choice = "var", axes = 2, color = "white",fill = "royalblue4",title="Contribution des variables \n sur la dimension 2",ylim=c(0,30))
+grid.arrange(contrib1, contrib2, nrow = 1)
+```
+
+Nous pouvons voir que le premier axe est représenté par les variables **rate_positive_words**, **rate_negative_words** et **global_sentiment_polarity**. Ce qui veut dire que ces variables sont liées, en effet l'avis des lecteurs vis-à-vis d'un article et donc leurs sentiments face à celui-ci sont fortement influencés par les mots positifs et négatifs s'y trouvant.
+Le sentiment donné par un article étant positivement corrélé avec le taux de mots positifs et négativement corrélé avec le taux de mots négatifs.
+
+Le deuxième est quant à lui représenté par les variables **title_subjectivity**, **abs_title_sentiment_polarity** et **abs_title_subjectivity**. Identiquement au premier axe, nous nous focalisons ici sur les titres. En effet la subjectivité ou non de celui-ci va influencer le sentiment des lecteurs.  
+ 
+Le premier axe s'intéresse principalement au contenu de l'article, alors que le deuxième semble représenter les titres. 
+
+### Résumé
+
+```{r, echo = FALSE}
+tabvar <- data.frame(round(acpa$var$coord[,c(1:2)],3), round(acpa$var$contrib[,c(1:2)],3), round(rowSums(acpa$var$cos2[,c(1:2)]),3))
+colnames(tabvar) <- c("Coord_F1", "Coord_F2","Contrib_F1","Contrib_F2","QualF1F2")
+datatable(tabvar)
+```
+
+## Les individus 
+
+```{r, echo = FALSE}
+a <- fviz_pca_biplot(acpa, col.ind="black",col.var = "cos2",gradient.cols = c("slategray2", "royalblue1", "royalblue4"),geom.ind = "point", repel = TRUE)
+b <- fviz_pca_ind(acpa, geom.ind = "point", col.ind = "black",geom = "point", alpha = 0.1)
+grid.arrange(a,b, nrow = 1)
+```
+
+Nous distinguons que peu de valeurs se trouvent dans la partie inférieure gauche du graphique et que les observations se regroupent par trainées. 
+Nous voyons également qu'il y a moins d'individus sur les bords du nuage qu'au centre, la répartition des individus n'est pas homogène. 
+
+La première dimension représente le taux de mots positifs et négatifs d'un article. La partie gauche de ce graphique nous montre les articles avec plus de mots négatifs et inversement, la partie de droite ceux avec plus de mots positifs.
+La différence au niveau de l'axe vertical se fait par les caractéristiques du titre de l'article, comme expliqué pour la dimension 2. Du fait que nous ayons du mal à comprendre les variables **title_subjectivity** et **title_sentiment_polarity**, nos analyses sont limitées. 
+
+Ici, 3 groupes d'individus semblent se détacher, répartis en trainées, parallèles aux vecteurs représentants les mots positifs et negatifs, un en bas, un au centre et en haut. 
+Le groupe du bas représenterait les articles donc la subjectivité des titres est faible et il semble y avoir autant d'articles avec plus de mots négatifs ou positifs.
+Le groupe du haut est dans la partie supérieure droite du graphique.
+Nous déduisons que quand la variable *title_subjectivity* est haute, les articles semblent contenir plus de mots positifs que negatifs et donc par corrélation avec **global_sentiment_polarity**, laissent un sentiment plus positif. 
+
+### Partitionnement 
+
+Nous nous intéréssons à la réparition des points du nuage des individus en faisant un partitionnement avec la méthode des kmeans.
+
+```{r,echo=FALSE}
+fviz_nbclust(acpa$ind$coor, kmeans, method="silhouette")
+```
+
+Le partitionnement en 6 clusters sembles être le plus optimal d'après le graphique average silhouette.
+
+
+```{r,echo=FALSE}
+k6 <- kmeans(acpa$ind$coor, centers=6, nstart = 25)
+fviz_cluster(k6, data=acpa$ind$coord, geom = "point", alpha=0.25)
+```
+
+Nous voyons que ces 6 clusters ne se séparent pas clairement sur un même axe et qu'ils sont en partie confondus.
+
+<br>
+
+# AFC
+
+Nous allons procéder à une AFC entre les variables **channel** et **popularity2** portant sur les thèmes des articles et sur leur popularité. 
+Notre choix s'est porté sur ces variables car la popularité reflète le nombre de partage qui est notre variable cible, et nous voulions confirmer les résultats trouvés en lien avec les thèmes des articles dans les statistiques descriptives.
+
+```{r, echo=FALSE}
+table <- table(dfbis$channel,dfbis$popularity2)
+dfafc1 <- data.frame(rbind(table[,c(2,1,3)]))
+ggballoonplot(dfafc1, main="Popularité par thème", label=F,show.margins=F,fill="slategray2", color="white", show.label = TRUE, size.range = c(5, 15),ggtheme = theme_minimal()) + theme(legend.position="none")
+```
+
+## Test du $\chi^2\ $
+
+Procédons à un test du $\chi^2\ $ pour regarder le lien entre les deux variables.
+
+```{r, echo=FALSE}
+testchi2 <- chisq.test(dfafc1)
+tabtest <- data.frame(testchi2$statistic,testchi2$parameter,testchi2$p.value, 0.05)
+colnames(tabtest) <- c("chi2","DDL","p-value","alpha")
+t(tabtest)  %>% kable(caption = "Répartition de la variable popularity2") %>% kable_styling(full_width = FALSE, position = "center",bootstrap_options = c("striped", "hover"))
+```
+
+D'après le test du $\chi^2\ $, on rejette l'hypothèse d'indépendance H0, ainsi les variables **channel** et **popularity2**, représentant respectivement les thèmes des articles et leur popularité, sont significativements associées (p-value = `r testchi2$p.value`).  Nos 2 variables semblent donc très liées, il est donc intéressant de procéder à une AFC.
+
+## Valeurs propres et inerties relatives de chaque axe
+
+```{r, echo=FALSE}
+resafc1 <- CA(dfafc1,graph=F)
+get_eigenvalue(resafc1) %>% kable() %>% kable_styling(full_width=F,position="center",bootstrap_options=c("striped","hover"))
+```
+
+Avec seulement 2 dimensions, nous obtenons 100% d'inertie ce qui prouve la forte dépendance des variables comme le test le démontre.
+
+## Forme du nuage
+
+```{r, echo=FALSE}
+fviz_ca(resafc1, col.row="royalblue4", col.col="azure4")
+```
+
+
+Nous remarquons un effet Guttman entre nos 2 variables. En effet, nous pouvons voir une oppposition entre les modalités extrèmes de la variable **popularity2** qui sont *very popular* et *unpopular*. Et une opposition entre les modalités extrèmes de la variable *channel* qui sont *autres*, *entertainment* et *world*. Cet effet Guttman peut être lié au fait que les classes de la variable **popularity2** ont un ordre naturel (un classement particulier). 
+Cela témoigne une fois de plus la forte liaison entre nos 2 variables.
+
+De plus, trois groupes semblent se détacher autour des profils colonnes avec respectivement les thèmes *world* et *entertainement* avec *unpopular*; puis *business*, *tech*, *social media* et *lifestyle* avec *popular*; et enfin *autre* avec *very popular*.
+
+## Contributions aux axes
+
+```{r, echo=FALSE}
+coldim1 <- fviz_contrib(resafc1,choice="col",axes=1, fill = "royalblue4", col = "white", ylim=c(0,50))
+rowdim1 <- fviz_contrib(resafc1,choice="row",axes=1, fill = "royalblue4", col = "white", ylim=c(0,50))
+grid.arrange(coldim1,rowdim1,nrow=1)
+```
+
+Le premier axe est représenté par la popularité des articles, majoritairement par la classe *unpopular* pour la variable colonne, et par les thèmes *world* et *social media* pour la variable ligne.
+Ces thèmes étant les moins partagés et les plus partagés en proportion, on voit les thèmes qui se regroupent en fonction de leur popularité.
+Nous retrouvons nos conclusions faites lors de l'analyse descriptive.
+
+```{r, echo=FALSE}
+coldim2 <- fviz_contrib(resafc1,choice="col",axes=2, fill = "royalblue4", col = "white", ylim=c(0,70))
+rowdim2 <- fviz_contrib(resafc1,choice="row",axes=2, fill = "royalblue4", col = "white", ylim=c(0,70))
+grid.arrange(coldim2,rowdim2,nrow=1)
+```
+
+Le second axe met en avant les valeurs extrêmes, la classe *very popular* guide en grande partie cette dimension pour la variable colonne avec le thème *autre* pour la varible ligne. Ce sont bien des valeurs extrêmes car la classe *very popular* représente 10% des articles et s'étend de 6100 et à plus de 800 000 partages contrairement aux autres classes d'une étendue plus restreinte avec un plus grand effectif.
+
+## Qualité de représentation
+
+```{r, echo=FALSE}
+resafc1$col$cos2 %>% kable(caption="Popularité") %>% kable_styling(full_width=F,position="center",bootstrap_options=c("striped","hover"))
+```
+
+En ce qui concerne les profils colonnes, c'est-à-dire la variable **popularity2**, les caractères *unpopular* et *popular* sont bien représentés dans la dimension 1. *Very popular* l'est pour la dimension 2. 
+
+```{r, echo=FALSE}
+resafc1$row$cos2 %>% kable(caption="Thème") %>% kable_styling(full_width=F,position="center",bootstrap_options=c("striped","hover"))
+```
+
+Pour les profils lignes, donc la variable **channel**, les cos2 de la dimension 1 sont majoritaires pour *lifestyle*, *world*, *social media* et *entertainment*. Dans la dimension 2, la qualité de *business* est la plus haute. 
+
+<br>
+
+# ACM
+
+Pour poursuivre ce que nous avons vu dans l'AFC, nous allons faire une ACM en rajoutant la variable **is_weekend**. Le but sera d'étendre nos observations de l'AFC et de confirmer celles observées dans la première partie de ce projet, c'est-à-dire que les articles les plus partagés seraient publiés le weekend.
+
+```{r, echo = FALSE, include = FALSE}
+dfacm <- dfbis[,c(24,47,50)]
+acm <- MCA(dfacm, graph = FALSE)
+```
+
+```{r, echo = FALSE}
+mcabiplot1 <- fviz_mca(acm, geom.ind="point", col.var="royalblue4", col.ind="azure4")
+mcabiplot2 <- fviz_mca(acm, geom.ind="point", col.var="royalblue4", col.ind="azure4",axes=c(3,4),repel=TRUE)
+grid.arrange(mcabiplot1,mcabiplot2,nrow=1)
+```
+
+## Les valeurs propres et inerties relatives de chaques axes 
+
+```{r, echo = FALSE}
+fviz_eig(acm, addlabels = TRUE,barfill = "royalblue4", barcolor="white")
+```
+
+Avec les 2 premières dimensions, nous obtenons 27% d'inertie. Les axes suivants sont très proches, nous décidons donc de conserver les deux premiers axes.
+
+## Les variables et modalités
+### Forme des nuages
+
+```{r, echo = FALSE}
+fviz_mca_var(acm, axes=c(1,2), col.var="cos2")
+```
+
+Nous retrouvons l'effet Guttman présent dans l'AFC, avec les modalités de la variable **is_weekend** en plus. La modalité *semaine* semble se placer entre la modalité *unpopular* et *popular*, et la modalité *weekend* se regroupe autour de *popular*.
+
+Nous pouvons voir pour l'axe 1 que les variables se trouvant dans la partie gauche du graphique sont les thèmes les moins populaires. De plus, nous voyons aussi que cette impopularité est reliée à la modalité *semaine*. Ces conclusions sont identiques à celles trouvées dans la première partie, c'est-à-dire que les articles les moins populaires sont ceux portant sur les thèmes *world* et *entertainment* et sont plus publiés la *semaine*. 
+Pour la partie droite du graphique, les conclusions s'alignent également avec celles trouvées dans les statistiques descriptives, les articles les plus populaires sont plus publiés le week-end et sont du thème *lifestyle* ou *social media*.
+
+En ce qui concerne l'axe 2, nous distinguons 3 groupes répartis en fonction de la variable **popularity2**. Les thèmes *business*,*tech* et *social media* sont considérés comme populaires. Inversement pour *lifestyle*,*world* et *entertainment*. Puis, *autre* se détache en tant que très populaire. Cela semble suivre les moyennes de partages trouvées dans la première partie et les résultats trouvés dans l'AFC.
+
+### Qualité de représentation
+
+Pour les dimensions 1 et 2, les modalités les mieux représentées sont incontestablement celles de la variable **popularity2**. De plus, la modalité *autre* appartenant à la variable **channel** à également un cos2 élevé.
+
+### Contributions aux axes 
+
+```{r, echo = FALSE}
+graphcontrib1 <- fviz_contrib(acm,choice="var", axes =1, fill = "royalblue4", col = "white", ylim=c(0,30))
+graphcontrib2 <- fviz_contrib(acm,choice="var", axes =2, fill = "royalblue4", col = "white", ylim=c(0,30))
+
+grid.arrange(graphcontrib1,graphcontrib2, nrow=1)
+```
+
+Nous pouvons voir que pour les axes 1 et 2, les modalités contributrices sont celles venant de la variable **popularity2**. Comme dit auparavant, ces axes représentent la popularité et donc les partages des articles. 
+
+## Les individus 
+### Forme des nuages
+
+```{r, echo = FALSE}
+fviz_mca_ind(acm,geom="point", axes=c(1,2), col.ind="contrib")
+```
+
+Nous pouvons voir pour les axes 1 et 2 que les individus ont une répartition plutôt homogène dans le repère. 
+
+### Contributions aux axes 
+
+Il est visible que les individus contribuant le plus aux axes sont les individus extrèmes se trouvant vers le haut du graphique. 
+Pour les axes 1 et 2, ces articles ont comme point commun la modalité *very popular*, c'est-à-dire que les articles énormement partagés influencent grandement nos résultats. 
+
+### Répartition des individus en fonction des variables 
+
+```{r, echo = FALSE}
+graphindvar1 <- fviz_mca_ind(acm,geom="point",repel=TRUE,alpha=0.4, habillage=1, addEllipses=TRUE) 
+graphindvar2 <- fviz_mca_ind(acm,geom="point",repel=TRUE,alpha=0.4, habillage=2, addEllipses=TRUE)
+graphindvar3 <- fviz_mca_ind(acm,geom="point",repel=TRUE,alpha=0.4, habillage=3, addEllipses=TRUE)
+grid.arrange(graphindvar1,graphindvar2,graphindvar3, nrow=2)
+```
+
+Ces différents graphiques nous montrent les liens entre les individus et les variables. 
+Ces graphiques ne font que confirmer nos conclusions trouvées précédemment, les articles sur le côté droit sur ceux sortant majoritairement le weekend, sont les plus populaires et font partis des thèmes *autre*, *lifestyle* et *social media*. En revanche, ceux sur le côté gauche, sont moins populaires, sortent la semaine et font partis des thèmes *world* et *entertainment*. De plus, les individus vers le haut, les plus extrèmes, sont caractérisés par un nombre de partages important et appartiennent au thème *autre*. 
+
+### Partitionnement et classification ascendante hiérarchique
+
+```{r,echo=FALSE, include=F}
+memory.limit(size=4000)
+memory.size(max=TRUE)
+```
+
+```{r,echo=FALSE}
+fviz_nbclust(acm$ind$coor, kmeans, method = "silhouette")
+```
+
+Nous pouvons voir que le nombre de cluster optimal est de 9 selon la méthode des kmeans.
+
+```{r,echo=FALSE}
+kmeansacm <- kmeans(acm$ind$coord, centers=9, nstart=25)
+fviz_cluster(kmeansacm, data=acm$ind$coord, geom="point")
+```
+
+Parmi ces 9 classes, certaines comportent peu d'observations, les répartitions dans les classes sont donc fortement inégales. Et les classes 1 et 6 sont confondues avec la classe numéro 5.
+Nous allons regarder le nombre de clusters donné par la classification hiérarchique. 
+
+L'argument kk permet de faire un prépartitionnement grâce à la méthode des kmeans. Ici, nous avons choisi kk=42 car 42 points sont présents sur les graphiques de l'ACM.
+
+```{r,echo=FALSE}
+cah <- HCPC(acm, graph=FALSE, kk=42)
+fviz_dend(cah, cex=0.3, main = "Classification sur les données brutes avec la méthode de Ward")
+```
+
+Maintenant, nous trouvons que le nombre de classes optimales est de 6. Ce résultat n'est pas si surprenant car il est visible sur le graphique permettant de trouver le nombre optimal de cluster que 6 est proche du nombre optimal qui est de 9.
+
+```{r,echo=FALSE}
+kmeansacm2 <- kmeans(acm$ind$coord, centers=6, nstart=25)
+fviz_cluster(kmeansacm2, data=acm$ind$coord, geom="point")
+```
+
+<br>
+
+# Conclusion
+
+Pour conclure, notre ACP nous a permis d'observer que les variables portant sur la positivité ou la négativité des mots étaient reliés au sentiment du lecteur par rapport à l'article. Nous pouvons faire l'hypothèse qu'un article avec un taux de mots positifs élevés provoquera au lecteur un sentiment positif, inversement pour les mots négatifs. Il en va de même pour les titres des articles. 
+
+Dans un second temps, nos AFC et ACM, nous ont permis de confirmer nos premières conjectures trouver dans les statistiques descriptives. En effet, les articles publiés le week-end sont plus populaires, voire beaucoup plus, et sont majoritairement des thèmes autre, lifestyle et social media. Ceci est certainement dû au fait que les lecteurs, ayant plus de temps le week-end, ont tendance à lire plus et donc, par conséquent, à partager plus. Pour ce qui est des thèmes, il nous est difficile de faire une analyse détaillé sur le thème autre, ne sachant pas de quoi celui-ci est composé. En revanche, pour les thèmes lifestyle et social media, il est évident que ces articles doivent être fortement pertinent et peut être plus travaillés que les autres car leurs effectifs dans notre base de données est réduit cependant leur nombre de partages en moyenne est bien plus élevé que pour les autres thèmes. Ou bien, les lecteurs des articles sur ces thèmes sont plus fidèles que pour les autres thèmes. 
+
+Pour perfectionner cette étude il aurait été intéressant de voir si, comme avancé dans nos statistiques descriptives, les articles les plus populaires sont en effet plus diversifiés au niveau de leur contenu, c'est-à-dire de voir s'ils possèdent plus d'images, de vidéos ou encore de liens. Nous savons déjà que les articles du thème autre sont fortement présent dans les articles avec énormement de partages, nous savons aussi que ces articles sortent en majorité le week-end, mais qu'ont-ils de plus ? L'ouverture que nous pouvons donc proposer est : de quoi est composé la classe very popular et quelles sont les différences entre ces articles et ceux moins partagés ?
+
+
