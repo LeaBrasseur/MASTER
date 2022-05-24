@@ -1,0 +1,468 @@
+---
+title: "Projet Analyse de données exploratoire"
+subtitle: "**Etude de la base de données *Onlinenewspopularity* **"
+author: "Léa BRASSEUR & Benjamin CHAUVET"
+date: ' '
+lang: "fr"
+fontsize: 11pt
+geometry: a4paper,top=1cm,bottom=1.5cm,left=1.5cm,right=1.5cm
+header-includes: 
+- \usepackage{float} 
+- \floatplacement{figure}{H} 
+- \floatplacement{table}{H} 
+output:
+  pdf_document: 
+    toc: true
+    number_section: true 
+    keep_tex: true
+  html_document: 
+    toc: true
+    toc_float: true
+    number_section: false
+    highlight: "espresso"
+    theme: flatly
+    df_print: paged
+    dev: png
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, echo = FALSE}
+knitr::opts_chunk$set(warning = FALSE, message = FALSE, fig.align="center", fig.height = 3.5, fig.width = 4.5)
+```
+
+```{r, echo = FALSE}
+library(FactoMineR)
+library(factoextra)
+library(corrplot)
+library(kableExtra)
+library(DT)
+library(ggplot2)
+library(gridExtra)
+library(tidyr)
+library(ggcorrplot)
+library(GGally)
+library(dplyr)
+library(stringr)
+```
+
+```{r, echo = FALSE}
+df <- read.table(file="OnlineNewsPopularity.csv", sep=",",dec=".",header=TRUE)
+```
+
+\newpage 
+
+# Introduction 
+## Présentation 
+
+<span style="color:blue"> Dans un premier temps, nous pouvons voir que la base de données porte sur les articles publiés sur le site **Mashable**. Elle contient **39644** articles et a **61** variables d'études. Dans les **61** variables nous pouvons constater qu'il y a seulement **1** variable qualitative et **60** variables quantitatives. Les variables quantitatives sont composées de **27** variables codées en binaire (entre 0 et 1 ou -1 et 0). 
+
+```{r, echo = FALSE, include = FALSE}
+sum(is.na(df)==TRUE)
+```
+
+Après vérification, nous avons pu constater qu'aucunes données n'étaient manquantes dans la base de données. 
+
+Nous avons décidé d'étudier certaines caractéristiques des articles telles que le nombre de liens, d'images ou de vidéos. Notre but par la suite a été de relier toutes ces études à la variable **shares** représentant le nombre de partages de chaque article. Nous voulions voir ce qui pouvait inciter les lecteurs à partager un article. 
+
+## Modifications
+
+Nous avons fait quelques modifications sur la base de données. Nous avons retiré les variables **url** et **timedelta** qui sont non-prédictives. 
+
+```{r,  echo = FALSE}
+dfbis <- df[,-c(1,2)] 
+```
+
+Puis, nous avons regardé la répartition du nombre de mots dans les articles.
+Nous avons remarqué qu'il y avait des observations avec aucun mot et nous avons décidé de les supprimer de la base de donnée car non pertinentes.
+
+```{r, echo = FALSE}
+mots <- t(summary(dfbis$n_tokens_content))
+mots %>% kable(caption = "Nombre de mots") %>% 
+  kable_styling(
+  full_width = FALSE, position = "center",bootstrap_options = c("striped", "hover")) 
+
+dfbis <- dfbis[dfbis$n_tokens_content>0,]
+```
+
+Nous allons ensuite réunir les variables portant sur les jours pour en avoir une seule au lieu de 7. En effet, les 7 variables concernant les jours étaient codées en binaire nous les avons réunis dans le but d'avoir une seule variable qualitative. 
+De même pour les thèmes des articles, passant de 6 variables à une seule qualitative.
+Pour la variable weekend nous l'avons modifié pour passer d'une variable binaire à une variable qualitative.
+
+```{r,  echo = FALSE}
+dfbis$data_channel_is_lifestyle[dfbis$data_channel_is_lifestyle==1] <- 1
+dfbis$data_channel_is_entertainment[dfbis$data_channel_is_entertainment==1] <- 2
+dfbis$data_channel_is_bus[dfbis$data_channel_is_bus==1] <- 3
+dfbis$data_channel_is_socmed[dfbis$data_channel_is_socmed==1] <- 4
+dfbis$data_channel_is_tech[dfbis$data_channel_is_tech==1] <- 5
+dfbis$data_channel_is_world[dfbis$data_channel_is_world==1] <-  6
+dfbis$channel <- rowSums(dfbis[,12:17])
+   
+dfbis$channel[dfbis$channel==1] <- "Lifestyle"
+dfbis$channel[dfbis$channel==2] <- "Entertainment"
+dfbis$channel[dfbis$channel==3] <- "Business"
+dfbis$channel[dfbis$channel==4] <- "Social Media"
+dfbis$channel[dfbis$channel==5] <- "Tech"
+dfbis$channel[dfbis$channel==6] <- "World"
+dfbis$channel[dfbis$channel==0] <- "Autre"
+dfbis <- dfbis[,-c(12:17)]
+```
+
+```{r,  echo = FALSE}
+dfbis$weekday_is_monday[dfbis$weekday_is_monday==1] <- 1
+dfbis$weekday_is_tuesday[dfbis$weekday_is_tuesday==1] <- 2
+dfbis$weekday_is_wednesday[dfbis$weekday_is_wednesday==1] <- 3
+dfbis$weekday_is_thursday[dfbis$weekday_is_thursday==1] <- 4
+dfbis$weekday_is_friday[dfbis$weekday_is_friday==1] <- 5
+dfbis$weekday_is_saturday[dfbis$weekday_is_saturday==1] <- 6
+dfbis$weekday_is_sunday[dfbis$weekday_is_sunday==1] <- 7
+dfbis$weekday <- rowSums(dfbis[,24:30])
+
+dfbis$weekday[dfbis$weekday==1] <- "Lundi"
+dfbis$weekday[dfbis$weekday==2] <- "Mardi"
+dfbis$weekday[dfbis$weekday==3] <- "Mercredi"
+dfbis$weekday[dfbis$weekday==4] <- "Jeudi"
+dfbis$weekday[dfbis$weekday==5] <- "Vendredi"
+dfbis$weekday[dfbis$weekday==6] <- "Samedi"
+dfbis$weekday[dfbis$weekday==7] <- "Dimanche"
+dfbis <- dfbis[,-c(24:30)]
+```
+
+```{r, echo = FALSE}
+dfbis$is_weekend[dfbis$is_weekend==0] <- "Semaine"
+dfbis$is_weekend[dfbis$is_weekend==1] <- "Weekend"
+```
+
+Nous avons créé une nouvelle base de données en enlevant les variables binaires vu précédemment et en les remplacant par les variables qualitatives **weekday** et **channel** que nous venons de modifier. 
+Voici un exemple des nouvelles variables : 
+
+```{r, echo = FALSE}
+dfv2 <- dfbis[, c(46,24,47,48)]
+head <- head(dfv2)
+head %>% kable(caption = "Sommaire") %>% 
+  kable_styling(
+  full_width = FALSE, position = "center",bootstrap_options = c("striped", "hover")) 
+```
+
+\newpage 
+
+# Statistiques descriptives à une variable
+## Nombre de partages
+
+Nous avons analysé la variable portant sur le partage des différents articles. 
+
+```{r, echo = FALSE}
+share <- t(summary(df$shares))
+share %>% kable(caption = "Nombre de partages") %>% 
+  kable_styling(
+  full_width = FALSE, position = "center",bootstrap_options = c("striped", "hover")) 
+```
+
+```{r, echo = FALSE, fig.height = 4.2, fig.width = 8}
+g1 <- ggplot(df, aes(x=shares,y=c(1:39644)))+ geom_point() + theme_minimal() + labs(x="Partages", y = "Les articles", title="Nombre de partages")
+g2 <- ggplot(df, aes(x=shares,y=c(1:39644)))+ geom_point() + theme_minimal() + xlim(0,200000) + labs(x="Partages", y = "Les articles", title="Nombre de partages (zoom)")
+grid.arrange(g1,g2, nrow=1)
+```
+
+La plupart des partages sont entre 1 et 100 000. Il y en a très peu au-delà de 200 000.
+Nous pouvons voir que 5 articles sortent du lot et ont été beaucoup plus partagés que les autres (plus de 600 000 partages).
+
+```{r, echo=FALSE}
+graph1 <- ggplot(df, aes(x=shares))+geom_histogram(binwidth=20, color="slategray2")+theme_minimal() + labs(title="Nombre de partages", x="Partages", y = "Effectif") 
+```
+
+```{r, echo= FALSE}
+graph2 <- ggplot(df, aes(x=shares))+geom_histogram(binwidth=20, color="slategray2")+theme_minimal() + labs(title="Nombre de partages (zoom)", x="Partages", y = "Effectif") + geom_vline(xintercept = mean(df$shares), linetype="dashed", color="hotpink") 
+graph2 <- graph2 + xlim(0,20000) + 
+annotate("text",x=6000,y=2000,label="Moyenne",color="hotpink",size=3)
+```
+
+```{r, echo=FALSE, fig.height = 3.2, fig.width = 6}
+grid.arrange(graph1,graph2,nrow=1)
+```
+
+Les articles de la base de données sont partagés en moyenne **3395** fois.
+Mais la moitié des articles sont partagés moins de **1400** fois. La différence entre la moyenne et la médiane est due au fait que les valeurs extrèmes (les articles vu précédemment, ayant énormement de partages) augmentent fortement la moyenne. 
+
+## Nombre de liens
+
+Puis nous avons regardés le nombre de liens dans les articles. 
+
+```{r, echo=FALSE}
+lien <- t(summary(df$num_hrefs))
+lien %>% kable(caption = "Nombre de liens") %>% 
+  kable_styling(
+  full_width = FALSE, position = "center",bootstrap_options = c("striped", "hover")) 
+```
+
+```{r, echo = FALSE}
+ggplot(df, aes(x=num_hrefs, y=c(1:39644)))+ geom_point() + theme_minimal() + labs(title="Nombre de liens", x="Liens", y = "Les articles")
+```
+Nous voyons qu'il y a peu d'articles avec plus de 100 liens. Et que la plupart ont entre 0 et 50 liens. 
+
+```{r, echo = FALSE}
+lien1 <- ggplot(df, aes(x=num_hrefs))+
+  geom_bar(bins=40,stat="count", width=0.7, fill="slategray2")+theme_minimal()+
+  ggtitle("Nombre de liens")+ labs(x="Liens", y="Effectifs")+ scale_x_continuous(breaks = c(10,50,100,150,200,250,300))
+```
+```{r, echo = FALSE}
+lien2 <- ggplot(df, aes(x=num_hrefs))+
+  geom_bar(bins=40,stat="count", width=0.7, fill="slategray2")+theme_minimal()+
+  ggtitle("Nombre de liens (zoom)")+labs(x="Liens", y="Effectifs")
+lien2 <- lien2 + xlim(0,75)
+```
+
+```{r, echo = FALSE, fig.height = 3.2, fig.width = 6}
+grid.arrange(lien1,lien2, nrow=1)
+```
+
+Grâce à ces graphiques et au sommaire nous voyons qu'en moyenne les articles ont  entre 0 et 10 liens.
+
+## Nombre d'images
+
+Nous avons ensuite étudié les images présentes dans les articles. 
+
+```{r, echo = FALSE}
+image <- t(summary(df$num_imgs))
+image %>% kable(caption = "Nombre d'images") %>% 
+  kable_styling(
+  full_width = FALSE, position = "center",bootstrap_options = c("striped", "hover")) 
+```
+
+```{r, echo = FALSE}
+image1 <- ggplot(df, aes(x=num_imgs))+
+  geom_bar(bins=40,stat="count", width=0.7, fill="slategray2")+theme_minimal()+
+  ggtitle("Nombre d'images")+
+  labs(x="Images", y="Effectifs")+ scale_x_continuous(breaks = c(1,10,20,30,40,50,60,70,80,90,100,130))
+```
+
+```{r, echo = FALSE}
+image2 <- ggplot(df, aes(x=num_imgs))+
+  geom_bar(bins=40,stat="count", width=0.7, fill="slategray2")+theme_minimal()+
+  ggtitle("Nombre d'images (zoom)")+labs(x="Images", y="Effectifs")
+image2 <- image2 + xlim(-1,20)
+```
+
+```{r,echo = FALSE, fig.height = 3.2, fig.width = 6}
+grid.arrange(image1,image2,nrow=1)
+```
+
+La grande majorité des articles n'ont qu'une seule image. 
+
+## Nombre de vidéos
+
+Puis, nous avons observé les vidéos. 
+
+```{r, echo = FALSE}
+video <- t(summary(df$num_videos))
+video %>% kable(caption = "Nombre de vidéos") %>% 
+  kable_styling(
+  full_width = FALSE, position = "center",bootstrap_options = c("striped", "hover")) 
+```
+
+```{r, echo = FALSE}
+video1 <- ggplot(df, aes(x=num_videos))+
+  geom_bar(bins=40,stat="count", width=0.7, fill="slategray2")+theme_minimal()+
+  ggtitle("Nombre de vidéos")+
+  labs(x="Vidéos", y="Effectifs")+ scale_x_continuous(breaks = c(0,10,20,30,40,50,60,70,80,90))
+```
+
+```{r, echo = FALSE}
+video2 <- ggplot(df, aes(x=num_videos))+
+  geom_bar(bins=40,stat="count", width=0.7, fill="slategray2")+theme_minimal()+
+  ggtitle("Nombre de vidéos (zoom)")+labs(x="Vidéos", y="Effectifs") 
+video2 <- video2 + xlim(-1,20)
+```
+
+```{r, echo = FALSE, fig.height = 3.2, fig.width = 6}
+grid.arrange(video1,video2, nrow=1)
+```
+
+La majorité des articles n'ont pas de vidéos.
+
+## Jours de publication
+
+Grâce à la nouvelle base de données nous pouvons comparer les jours de publication des articles. 
+
+```{r,  echo = FALSE}
+ggplot(dfbis, aes(x=weekday))+
+  geom_bar(bins=10, width=0.7, fill="royalblue4")+theme_minimal()+
+  ggtitle("Jours de publication")+ labs(x="Jours", y="Effectifs") + scale_x_discrete(limits=c("Lundi","Mardi","Mercredi","Jeudi","Vendredi","Samedi","Dimanche")) + geom_text(aes(label = ..count..), stat = "count",vjust=1.4, col="White")
+```
+
+Nous pouvons voir que les articles sont le plus souvent publiés entre le *lundi* et le *jeudi*. Nous constatons une légère baisse le *vendredi* au niveau des publications. Baisse qui se poursuit le week-end. 
+
+## Thèmes
+
+Nous pouvons également regarder les thèmes des articles. 
+
+```{r,  echo = FALSE, fig.height = 4.5, fig.width = 5.5}
+ggplot(dfbis, aes(x=channel))+
+  geom_bar(bins=10, width=0.7, fill="royalblue4")+theme_minimal()+coord_flip()+
+  ggtitle("Thèmes")+ labs(x="Thèmes", y="Effectifs") + geom_text(aes(label = ..count..), stat = "count", vjust=0.5,hjust=1.2, col="White")
+```
+
+Peu d'articles sur les thèmes *lifestyle* et *social media* sont publiés par rapport aux autres thèmes qui sont à peu près équivalents. Le thème le plus présent est *world*.
+
+\newpage
+
+# Statistiques descriptives à deux variables
+
+Dans cette partie nous allons relier notre variable principale **shares** aux autres variables. 
+
+## Jours de publication 
+
+```{r,echo = FALSE,fig.height = 3.8, fig.width = 5}
+ggplot(dfbis, aes(y=shares,x=weekday))+ geom_bar(stat="identity", fill="royalblue4") + theme_minimal() + ggtitle("Le nombre de partages en fonction \n des jours de publication")+ labs(y="Nombre de partages", x="Jours")+ theme(axis.text.x = element_text(angle = 35)) + scale_x_discrete(limits=c("Lundi","Mardi","Mercredi","Jeudi","Vendredi","Samedi","Dimanche")) 
+```
+
+```{r, echo = FALSE}
+lundi <- round(mean(dfbis$shares[dfbis$weekday=="Lundi"]),)
+mardi <- round(mean(dfbis$shares[dfbis$weekday=="Mardi"]),)
+mercredi <- round(mean(dfbis$shares[dfbis$weekday=="Mercredi"]),)
+jeudi <- round(mean(dfbis$shares[dfbis$weekday=="Jeudi"]),)
+vendredi <- round(mean(dfbis$shares[dfbis$weekday=="Vendredi"]),)
+samedi <- round(mean(dfbis$shares[dfbis$weekday=="Samedi"]),)
+dimanche <- round(mean(dfbis$shares[dfbis$weekday=="Dimanche"]),)
+jours <- c(lundi,mardi,mercredi,jeudi,vendredi,samedi,dimanche)
+```
+
+```{r,echo = FALSE}
+joureffectif <- rowSums(table(dfbis$weekday, dfbis$shares)) 
+joureffectif <- t(data.frame(joureffectif))
+joureffectif <- joureffectif[,c(3,4,5,2,7,6,1)]
+```
+
+```{r, echo = FALSE}
+jours2 <- data.frame(c("Lundi","Mardi","Mercredi","Jeudi","Vendredi","Samedi","Dimanche"), jours, joureffectif)
+colnames(jours2) <- c("Jours","Moyenne des partages", "Effectif total par jour")
+jours2 <- t(jours2)
+jours2 %>% kable(caption = "Jours et partages") %>% 
+  kable_styling(full_width = FALSE, position = "center",bootstrap_options = c("striped", "hover")) 
+```
+
+Nous pouvons constater grâce au tableau qu'en moyenne les articles les plus partagés sont publiés le *samedi* et le *dimanche.*
+
+La moyenne des partages est **`r round(mean(dfbis$shares),)`**, nous constatons donc que la moyenne pour *samedi* et *dimanche* est au-dessus.
+
+## Thèmes 
+
+```{r,echo = FALSE, fig.height = 2.6, fig.width = 5}
+ggplot(dfbis, aes(y=shares,x=channel))+ geom_bar(stat="identity", fill="royalblue4") + theme_minimal() + ggtitle("Le nombre de partages en fonction \n du thème")+ labs(y="Nombre de partages", x="Thèmes de l'article")+ theme(axis.text.x = element_text(angle = 35))+coord_flip() 
+```
+
+```{r, echo = FALSE}
+moy1 <- round(mean(dfbis$shares[dfbis$channel=="Lifestyle"]),)
+moy2 <- round(mean(dfbis$shares[dfbis$channel=="Entertainment"]),)
+moy3 <- round(mean(dfbis$shares[dfbis$channel=="Business"]),)
+moy4 <- round(mean(dfbis$shares[dfbis$channel=="Social Media"]),)
+moy5 <- round(mean(dfbis$shares[dfbis$channel=="Tech"]),)
+moy6 <- round(mean(dfbis$shares[dfbis$channel=="World"]),)
+moy7 <- round(mean(dfbis$shares[dfbis$channel=="Autre"]),)
+moy <- c(moy1, moy2, moy3, moy4, moy5, moy6, moy7)
+```
+
+```{r, echo = FALSE}
+themeeffectif <- rowSums(table(dfbis$channel, dfbis$shares)) 
+themeeffectif <- t(data.frame(themeeffectif))
+themeeffectif <- themeeffectif[,c(4,3,2,5,6,7,1)]
+```
+
+```{r echo = FALSE}
+moyenne <- data.frame(c("Lifestyle", "Entertainment", "Business", "Social Media", "Tech", "World", "Autre"), moy, themeeffectif)
+colnames(moyenne) <- c("Thèmes", "Moyenne des partages", "Effectif total par thème")
+moyenne <- t(moyenne[c(2:3)])
+moyenne %>% kable(caption = "Thèmes et partages") %>% 
+  kable_styling(full_width = FALSE, position = "center",bootstrap_options = c("striped", "hover")) 
+```
+
+Le tableau nous permet de voir qu'en moyenne les catégories d'articles les plus partagés, en dehors de la catégorie autre, sont *lifestyle* et *social media*. Alors que leurs effectifs sont minoritaires dans la base de données. Au contraire, les articles sur le thème world sont plus nombreux mais moins partagés. 
+
+La moyenne des partages toutes catégories confondues est **`r round(mean(dfbis$shares),)`**, nous constatons donc que la moyenne pour lifestyle et social media est au-dessus, contrairement aux autres moyennes qui sont en-dessous. 
+
+## Articles populaires vs impopulaires
+
+```{r, echo = FALSE}
+share <- t(summary(dfbis$shares))
+share %>% kable(caption = "Sommaire") %>% kable_styling(full_width = FALSE, position = "center",bootstrap_options = c("striped", "hover")) 
+```
+
+La médiane des partages est de 1400.
+
+Nous allons créer une variable **popularity** qui prend pour valeur *popular* si l'article est partagé 1400 fois ou plus (le nombre médian de partages) et pour valeur *unpopular* si l'article est partagé moins de 1400 fois.
+
+```{r, echo = FALSE}
+dfbis[,49] <- colnames("Popularity")
+dfbis$popularity[dfbis$shares>=1400] <- "Popular"
+dfbis$popularity[dfbis$shares<1400] <- "Unpopular"
+
+ggplot(dfbis, aes(x=popularity))+
+   geom_bar(aes(fill=factor(popularity))) + theme_minimal() + ggtitle("Popularité") + labs(x="Popularité", y="Effectifs")+  scale_fill_manual(values=c("royalblue4", "slategray2 ")) + labs(fill = "Popularity") + geom_text(aes(label = ..count..), stat = "count",vjust=1.3, col="White")
+```
+
+Comme dans la description nous trouvons `r length(dfbis$popularity[dfbis$popularity=="Popular"])` articles populaires et `r length(dfbis$popularity[dfbis$popularity=="Unpopular"])` articles impopulaires.  
+
+```{r, echo = FALSE, fig.height = 4.5, fig.width = 8}
+a <- ggplot(dfbis, aes(x=weekday, fill=popularity))+
+       geom_bar(position = "fill")+ theme_minimal()+ ggtitle("Popularité selon le jour de publication")+ theme(axis.text.x = element_text(angle = 45)) + labs(y="Proportions",x="Jours")+          scale_x_discrete(limits=c("Lundi","Mardi","Mercredi","Jeudi","Vendredi","Samedi","Dimanche"))+ scale_fill_manual(values=c("royalblue4","slategray2 ")) + geom_text(aes(by = factor(weekday)), stat = "prop", position = position_fill(.5) , col="white",size = 2) 
+
+b <- ggplot(dfbis, aes(x=is_weekend, fill=popularity))+
+   geom_bar()+ theme_minimal()+ ggtitle("Popularité en semaine contre le weekend")+labs(y="Effectifs",x="Semaine ou weekend") + scale_fill_manual(values=c("royalblue4","slategray2 ")) 
+#+ geom_text(aes(by = factor(is_weekend)), stat = "prop", vjust=2 , col="white",size = 3)
+grid.arrange(a,b,nrow=1)
+```
+
+- `r round(length(dfbis$popularity[dfbis$is_weekend=="Weekend"])/length(dfbis$popularity),3)*100` % des articles sont publiés le *weekend* dont `r round(length(dfbis$popularity[dfbis$is_weekend=="Weekend" & dfbis$popularity=="Popular"])/length(dfbis$popularity[dfbis$is_weekend=="Weekend"]),3)*100` % sont populaires (respectivement
+ `r round(length(dfbis$popularity[dfbis$weekday=="Samedi" & dfbis$popularity=="Popular"])/length(dfbis$popularity[dfbis$weekday=="Samedi"]),3)*100` % d'articles populaires pour le *samedi* et `r round(length(dfbis$popularity[dfbis$weekday=="Dimanche" & dfbis$popularity=="Popular"])/length(dfbis$popularity[dfbis$weekday=="Dimanche"]),3)*100` % pour le *dimanche*). 
+ 
+ - `r round(length(dfbis$popularity[dfbis$is_weekend=="Semaine"])/length(dfbis$popularity),3)*100` % des articles sont publiés la semaine dont `r round(length(dfbis$popularity[dfbis$is_weekend=="Semaine" & dfbis$popularity=="Popular"])/length(dfbis$popularity[dfbis$is_weekend=="Semaine"]),3)*100` % sont populaires.
+
+```{r, echo = FALSE, fig.height = 4.5, fig.width = 8}
+ggplot(dfbis, aes(x=channel, fill=popularity))+
+   geom_bar(position = "fill")+ theme_minimal()+ ggtitle("Popularité selon le thème de l'article")+ labs(y="Proportions",x="Thèmes") + theme(axis.text.x = element_text(angle = 35))+ scale_fill_manual(values=c("royalblue4","slategray2 ")) + coord_flip() + geom_text(aes(by = factor(popularity)), stat = "prop", position = position_fill(.5) , col="white",size = 4) 
+```
+
+En proportion, le thème *social media* est le plus populaire et le thème *world* est le moins populaire.
+
+- `r round(length(dfbis$popularity[dfbis$channel=="Social Media"])/length(dfbis$popularity),3)*100` % des articles sont du thème *social media*, dont `r round(length(dfbis$popularity[dfbis$channel=="Social Media" & dfbis$popularity=="Popular"])/length(dfbis$popularity[dfbis$channel=="Social Media"]),3)*100` % sont populaires.
+
+- `r round(length(dfbis$popularity[dfbis$channel=="World"])/length(dfbis$popularity),3)*100` % des articles sont du thème *world*, dont seulement `r round(length(dfbis$popularity[dfbis$channel=="World" & dfbis$popularity=="Popular"])/length(dfbis$popularity[dfbis$channel=="World"]),3)*100` % sont populaires.
+
+### Images, vidéos et liens 
+
+Nous nous intéressons maintenant à l'influence du nombre d'images sur les partages. Nous allons regarder en particulier comment cela influe en fonction d'un article populaire ou non.
+
+Nous nous restreigons ici à 10 000 partages maximum ce qui représente 95% de nos observations, car les articles grandement partagés influencent beaucoup la relation.
+
+```{r, echo = FALSE}
+ggplot(dfbis, aes(x=num_imgs,y=shares, fill=popularity, color=popularity))+
+  geom_point()+ylim(c(0,10000))+theme_minimal()+
+  geom_smooth(method="lm", color="grey",size=0.5)+ scale_color_manual(values=c("royalblue4","slategray2"))+ scale_fill_manual(values=c("royalblue4","slategray2")) + labs(y="Partages",x="Nombre d'images") + ggtitle("Relation nombre d'images et partages")
+```
+
+Nous observons qu'il y a une relation positive entre le nombre de partages et le nombres d'images pour les articles populaires donc partagés plus de 1400 fois. 
+Cependant, pour les articles impopulaires la relation n'est pas concluante.
+
+Les conclusions sont identiques pour les relations entre les variables **partage** et **vidéo** puis **partage** et **lien**. Une relation positive se distingue pour les articles populaires mais pas pour les impopulaires. 
+
+En revanche, comme vu précédemment dans la partie sur les statistiques à une variable, la plupart des articles ont peu d'images, de vidéos et de liens donc ici les valeurs extrèmes influencent fortement la relation. 
+
+\newpage
+
+# Corrélation 
+
+Nous retirons toutes les variables que nous ne jugeons pas nécessaires telles que les variables en rapport avec les mots clés ou encore les variables de polarité. 
+
+```{r,  echo = FALSE, fig.height = 4, fig.width = 5.5,}
+dfbis2 <- dfbis[,-c(11:20,25:29,36:41,43,45)]
+ggcorr(dfbis2, name = "corr", label = TRUE, hjust = 1, label_size = 1.5, angle = 0, size = 2, low = "darkmagenta", mid = "white", high = "royalblue4 ")
+```
+
+Cette matrice de corrélation pourra nous être utile dans l'ACP et dans l'AFC qui seront faites prochainement. 
+Même si nous voyons que très peu de variables sont corrélées entre elles. 
+
+# Conclusion 
+
+Pour conclure, nous pouvons dire que les partages dépendent de plusieurs variables. Par exemple, les articles sur certains thèmes tels que *social media* et *lifestyle* sont plus propices à être partagés. Les articles publiés le week-end ont aussi plus de chance d'être relayés par les lecteurs. 
+
+Nous avons également vu que le contenu de l'article (les images, liens et vidéos) peut, dans une certaine mesure, influencer les partages. Nous pouvons faire l'hypothèse que les articles ont tendance à être plus partagés quand leur contenu est plus diversifié et qu'ils ne se limitent pas seulement à du texte. 
