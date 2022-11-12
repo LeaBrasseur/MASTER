@@ -1,0 +1,873 @@
+---
+title: "Projet Data Minning"
+subtitle: "**Etude de la base de données *Onlinenewspopularity* **"
+author: "Léa BRASSEUR & Benjamin CHAUVET"
+date: ' '
+lang: "fr"
+fontsize: 11pt
+geometry: a4paper,top=2cm,bottom=2cm,left=1.5cm,right=1.5cm
+header-includes: 
+- \usepackage{float} 
+- \floatplacement{figure}{H} 
+- \floatplacement{table}{H} 
+output:
+  html_document: 
+    toc: true
+    toc_float: true
+    number_section: false
+    highlight: "espresso"
+    theme: flatly
+    df_print: paged
+    dev: png
+  pdf_document: 
+    toc: false
+    number_section: true 
+    keep_tex: true
+editor_options: 
+  chunk_output_type: inline
+---
+
+```{r setup, echo = FALSE}
+knitr::opts_chunk$set(echo = FALSE, warning = FALSE, message = FALSE, fig.align="center")
+```
+
+```{r, echo = FALSE}
+library(FactoMineR)
+library(factoextra)
+library(corrplot)
+library(kableExtra)
+library(DT)
+library(gridExtra)
+library(tidyr)
+library(ggcorrplot)
+library(GGally)
+library(stringr)
+library(gplots)
+library(stargazer)
+library(ggpubr)
+library(tidyverse)
+library(tidymodels)
+library(discrim)
+library(kknn)
+library(ROCR)
+library(class)
+library(MASS)
+library(rpart)
+library(randomForest)
+library(ada)
+library(rpart.plot)
+library(vip)
+library(caret)
+library(pROC)
+library(grDevices)
+library(e1071)
+```
+
+```{r, echo = FALSE}
+df <- read.table(file="OnlineNewsPopularity.csv", sep=",",dec=".",header=TRUE)
+```
+
+# Introduction 
+## Recodage 
+```{r,echo = FALSE}
+dfbis <- df[,-c(1,2)] 
+```
+
+```{r, echo=FALSE}
+dfbis <- dfbis[dfbis$n_tokens_content>0,]
+```
+
+```{r, echo=FALSE}
+dfbis <- dfbis %>%  mutate(channel = case_when(
+                 data_channel_is_lifestyle==1 ~ "Lifestyle",
+                 data_channel_is_entertainment==1 ~ "Entertainment",
+                 data_channel_is_bus==1 ~ "Business",
+                 data_channel_is_socmed==1 ~ "Social Media",
+                 data_channel_is_tech==1 ~ "Technologie",
+                 data_channel_is_world==1 ~ "World", 
+                 data_channel_is_lifestyle==0 & data_channel_is_entertainment==0 & data_channel_is_bus==0 &                      data_channel_is_socmed==0 & data_channel_is_tech==0 & data_channel_is_world==0 ~ "Autre"))
+dfbis <- dfbis[,-c(12:17)]
+```
+
+```{r, echo=FALSE}
+dfbis <- dfbis %>% mutate(weekday = case_when(
+                                  weekday_is_monday==1 ~ "Lundi",
+                                  weekday_is_tuesday==1 ~ "Mardi",
+                                  weekday_is_wednesday==1  ~ "Mercredi",
+                                  weekday_is_thursday==1 ~ "Jeudi",
+                                  weekday_is_friday==1 ~ "Vendredi",
+                                  weekday_is_saturday==1 ~ "Samedi",
+                                  weekday_is_sunday==1 ~ "Dimanche"))
+
+dfbis <- dfbis[,-c(24:30)]
+```
+
+```{r, echo=FALSE}
+dfbis <- dfbis %>% mutate(is_weekend = case_when(
+                 is_weekend==1 ~ "Weekend",
+                 is_weekend==0 ~ "Semaine"))
+```
+
+```{r, echo=FALSE}
+dfbis <- dfbis %>% mutate(popularity = case_when(
+                shares<=1400 ~ "Unpopular",
+                shares>1400 ~ "Popular"))
+```
+
+```{r, ech=FALSE}
+table(dfbis$popularity) %>% kable(caption = "Répartition de la variable popularity") %>% 
+  kable_styling(
+  full_width = FALSE, position = "center",bootstrap_options = c("striped", "hover")) 
+```
+
+
+## Echantillonage 
+
+```{r, echo = FALSE}
+set.seed(1)
+```
+
+```{r, echo=FALSE}
+dfbis <- dfbis[,-c(4,46)]
+```
+
+```{r, echo=FALSE}
+dfbis_split <- initial_split(dfbis,strata=popularity, prop=2/3)
+dfbis_split
+dfbis_train <- training(dfbis_split)
+dfbis_test <- testing(dfbis_split)
+```
+
+```{r}
+data.frame(nrow(dfbis_train), nrow(dfbis_test)) %>% kable(caption = "Répartition des échantillons", col.names = c("Apprentissage", "Test")) %>% 
+  kable_styling(
+  full_width = FALSE, position = "center",bootstrap_options = c("striped", "hover"))
+```
+
+# Analyses factorielles discriminantes 
+## LDA
+
+```{r, echo=FALSE}
+lda_model <- lda(popularity~., data = dfbis_train)
+save(lda_model, file = "lda_model.RData")
+res_lda <- predict(lda_model, dfbis_test)
+```
+
+```{r, echo=FALSE}
+realite <- dfbis_test$popularity
+prediction <- res_lda$class
+tab <- table(prediction, realite)
+addmargins(tab) %>% kable(caption = "Matrice de confusion") %>% 
+  kable_styling(
+  full_width = FALSE, position = "center",bootstrap_options = c("striped", "hover")) %>% add_header_above(c("","Réalité"=2, ""))
+```
+
+
+```{r}
+round(prop.table(table(prediction, realite), margin = 2), 3) %>%  kable(caption = "Proportion en fonction de la réalité") %>% 
+  kable_styling(
+  full_width = FALSE, position = "center",bootstrap_options = c("striped", "hover")) %>% add_header_above(c("","Réalité"=2))
+```
+
+```{r, echo=FALSE} 
+ERR_lda <- (tab[1,2] + tab[2,1]) / sum(tab)
+```
+
+```{r, echo=FALSE}
+ERR1_lda <- round(1-(tab[2,2]/sum(tab[,2])),3)
+```
+
+```{r, echo=FALSE}
+ERR2_lda <- round(1-(tab[1,1]/sum(tab[,1])),3)
+```
+
+```{r}
+popular<-sum(dfbis_test$popularity=="Popular") 
+unpopular<-sum(dfbis_test$popularity=="Unpopular")
+Error<-NULL 
+ErrorI<-NULL
+ErrorII<-NULL 
+for(i in 1:101){
+  c<-(i-1)/200 
+  Prediction <- rep("Popular", nrow(dfbis_train)) 
+  Prediction[res_lda$posterior[,2]>c]<-"Unpopular"
+  Error[i]<-sum(Prediction!=realite)/nrow(dfbis_train) 
+  ErrorI[i]<-sum((Prediction=="Popular")&(realite=="Unpopular"))/unpopular
+  ErrorII[i]<-sum((Prediction=="Unpopular")&(realite=="Popular"))/popular
+  } 
+
+seuil <- seq(0, 0.5, by = (0.5/100))
+df_error <- cbind(seuil, Error, ErrorI, ErrorII)
+df_error <- as.data.frame(df_error)
+
+p <- ggplot(data=df_error)  + geom_line(data=df_error, aes(x=seuil, y=ErrorI, colour = "1-Spécificité (Erreur type I)"))+ geom_line(data=df_error, aes(x=seuil, y=ErrorII, colour = "1-Sensibilité (Erreur type II)")) + geom_line(data=df_error, aes(x=seuil, y=Error, colour = "Erreur Globale")) + ggtitle("Graphiques des différentes erreurs de la LDA")+theme_minimal()+  scale_color_manual(values=c("steelblue", "violetred", "slategray"))
+p
+```
+
+```{r, echo=FALSE}
+head(res_lda$posterior) %>% round(3) %>% kable() %>% 
+  kable_styling(
+  full_width = FALSE, position = "center",bootstrap_options = c("striped", "hover")) 
+```
+
+```{r, echo=FALSE}
+acc <- round(tab[1,1]+tab[2,2])/sum(tab)
+```
+
+```{r, echo=FALSE}
+sol <- confusionMatrix(as.factor(realite), prediction)
+sol$byClass %>% kable(caption = "Sommaire") %>% 
+  kable_styling(
+  full_width = FALSE, position = "center",bootstrap_options = c("striped", "hover"))
+```
+
+```{r, echo=FALSE}
+roc_lda <- roc(realite, res_lda$posterior[, 2])
+ggroc(roc_lda,  color="purple") + ggtitle("Courbe roc lda") +
+  geom_abline(intercept = 1, slope = 1) + theme_minimal()
+```
+
+```{r, echo=FALSE}
+auc_lda <- round(roc_lda$auc[1],3)
+```
+
+## QDA 
+
+```{r, echo=FALSE}
+dfbis2 <- df[,-c(1,2,6,36,39,44)] 
+dfbis2 <- dfbis2[dfbis2$n_tokens_content>0,]
+
+dfbis2 <- dfbis2 %>% mutate(popularity = case_when(
+                shares<=1400 ~ "Unpopular",
+                shares>1400 ~ "Popular"))
+dfbis2 <- dfbis2[,-55]
+dfbis2[,55] <- as.factor(dfbis2[,55])
+```
+
+```{r, echo=FALSE}
+set.seed(1)
+dfbis2_split <- initial_split(dfbis2, strata=popularity, prop=2/3)
+dfbis2_split
+dfbis2_train <- training(dfbis2_split)
+dfbis2_test <- testing(dfbis2_split)
+```
+
+```{r, echo=FALSE}
+qda_mod <- qda(popularity~., data = dfbis2_train)
+save(qda_mod, file = "qda_mod.RData")
+qda_res <- predict(qda_mod, dfbis2_test)
+```
+
+```{r, echo=FALSE}
+prediction <- qda_res$class
+realite <- dfbis2_test$popularity
+tab2 <- table(prediction, realite)
+addmargins(tab2) %>% kable(caption = "Matrice de confusion") %>% 
+  kable_styling(
+  full_width = FALSE, position = "center",bootstrap_options = c("striped", "hover")) %>% add_header_above(c("","Réalité"=2, ""))
+```
+
+```{r}
+proptab2 <- round(prop.table(tab2, margin = 2), 3)
+proptab2 %>% kable(caption = "Matrice des proportions en fonction de la réalité") %>% 
+  kable_styling(
+  full_width = FALSE, position = "center",bootstrap_options = c("striped", "hover")) %>% add_header_above(c("","Réalité"=2))
+```
+
+```{r}
+sol2 <- confusionMatrix(realite, prediction)
+sol2$byClass %>% kable(caption = "Sommaire") %>% 
+  kable_styling(
+  full_width = FALSE, position = "center",bootstrap_options = c("striped", "hover")) 
+```
+
+```{r, echo=FALSE}
+popular<-sum(dfbis2_test$popularity=="Popular") 
+unpopular<-sum(dfbis2_test$popularity=="Unpopular")
+Error<-NULL 
+ErrorI<-NULL
+ErrorII<-NULL 
+for(i in 1:101){
+  c<-(i-1)/200 
+  Prediction <- rep("Popular", nrow(dfbis2_train)) 
+  Prediction[qda_res$posterior[,2]>c]<-"Unpopular"
+  Error[i]<-sum(Prediction!=realite)/nrow(dfbis2_train) 
+  ErrorI[i]<-sum((Prediction=="Popular")&(realite=="Unpopular"))/unpopular
+  ErrorII[i]<-sum((Prediction=="Unpopular")&(realite=="Popular"))/popular
+  } 
+
+seuil <- seq(0, 0.5, by = (0.5/100))
+df_error <- cbind(seuil, Error, ErrorI, ErrorII)
+df_error <- as.data.frame(df_error)
+
+p <- ggplot(data=df_error)  + geom_line(data=df_error, aes(x=seuil, y=ErrorI, colour = "1-Spécificité (Erreur type I)"))+ geom_line(data=df_error, aes(x=seuil, y=ErrorII, colour = "1-sensibilité (Erreur type II)")) + geom_line(data=df_error, aes(x=seuil, y=Error, colour = "Erreur Globale")) + ggtitle("Graphiques des différentes erreurs")+theme_minimal()+  scale_color_manual(values=c("steelblue", "violetred", "aquamarine"))
+p
+```
+
+```{r}
+roc_qda <- roc(realite, qda_res$posterior[, 2])
+ggroc(roc_qda, color="steelblue") + ggtitle("Courbe roc qda") +
+  geom_abline(intercept = 1, slope = 1) + theme_minimal()
+```
+
+```{r}
+auc_qda <- round(roc_qda$auc[1],3)
+```
+
+## Comparaison LDA et QDA
+
+```{r}
+ggroc(list(LDA=roc_lda, QDA=roc_qda)) +
+  ggtitle("Récapitulatif des courbes ROC") +
+  geom_abline(intercept = 1, slope = 1) + theme_minimal() +  scale_color_manual(values=c( "violetred","steelblue"))
+```
+
+# K plus proches voisins
+
+```{r}
+K <- 6
+knn_pred <- knn(train = dfbis2_train[,-55], test = dfbis2_test[,-55],
+                    cl = dfbis2_train[, "popularity"], k=K, prob = TRUE)
+save(knn_pred, file = "knn.RData")
+```
+
+```{r}
+realite <- dfbis2_test$popularity
+prediction <- knn_pred
+tabknn <- table(prediction, realite) %>% addmargins() %>% kable(caption = "Matrice de confusion") %>% kable_styling(full_width = FALSE, position = "center",bootstrap_options = c("striped", "hover")) %>% add_header_above(c("","Réalité"=2, ""))
+tabknn
+```
+
+```{r}
+x <- dfbis2_train[,-55]
+y <- dfbis2_train[,55]
+knn_tune <- tune.knn(x, y, k = 1:20, tunecontrol = tune.control(sampling = "cross"))
+save(knn_tune, file = "knn_tune.RData")
+```
+
+```{r}
+ggplot()+aes(x=knn_tune$performances[,1], y=knn_tune$performances[,2])+
+  geom_line(color = "aquamarine", size = 0.75)+theme_minimal()+
+  geom_point()+
+  labs(y = "Error", x="K", title="Erreurs d'entrainement des KNN")
+```
+
+```{r}
+best_error <- round(knn_tune$best.performance*100, 3)
+Tab<-cbind(knn_tune$best.parameters, best_error)
+colnames(Tab)<-c("K","Erreur globale")
+Tab %>% kable(caption = "Meilleur centre") %>% 
+  kable_styling(
+  full_width = FALSE, position = "center",bootstrap_options = c("striped", "hover"))
+```
+
+```{r}
+Kbis <- 18
+knn.pred.prob2 <- knn(train = dfbis2_train[,-55], test = dfbis2_test[,-55],
+                    cl = dfbis2_train[, "popularity"], k=Kbis, prob = TRUE)
+save(knn.pred.prob2, file = "knn_best.RData")
+```
+
+```{r}
+table(knn.pred.prob2, dfbis2_test[,55]) %>% addmargins() %>% kable(caption = "Matrice de confusion") %>% kable_styling(full_width = FALSE, position = "center",bootstrap_options = c("striped", "hover")) %>% add_header_above(c("","Réalité"=2, ""))
+```
+
+```{r}
+ERR_knn <- round(mean(dfbis2_test[,55] != knn.pred.prob2),3)
+```
+
+```{r}
+sol3 <- confusionMatrix(knn.pred.prob2, dfbis2_test[,55])
+sol3$byClass %>% kable(caption = "Sommaire") %>% 
+  kable_styling(
+  full_width = FALSE, position = "center",bootstrap_options = c("striped", "hover")) 
+```
+
+```{r}
+ERR1_knn <- round(1-(sol3$table[2,2]/(sol3$table[1,2]+sol3$table[2,2])),3)
+ERR2_knn <- round(1-(sol3$table[1,1]/(sol3$table[1,1]+sol3$table[2,1])),3)
+```
+
+# Arbre de classification 
+
+## Arbres de décisions
+
+```{r, echo=FALSE}
+control.max <- rpart.control(cp = 0, max.depth = 0, minbucket = 1, minsplit = 1)
+tree <- rpart(popularity~. , data = dfbis_train, control = control.max,
+            parms = list(split = "information"))
+save(tree, file = "tree.RData")
+```
+
+```{r, echo=FALSE}
+pred.tree <- predict(tree, newdata = dfbis_test, type = "class")
+tabarbre <- table(pred.tree, dfbis_test[,47]) %>% addmargins() %>% kable(caption = "Matrice de confusion") %>% kable_styling(full_width = FALSE, position = "center",bootstrap_options = c("striped", "hover")) %>% add_header_above(c("","Réalité"=2, ""))
+tabarbre
+```
+
+```{r}
+proptabarbre <- round(prop.table(table( pred.tree, dfbis_test[,47]), margin = 1), 3)
+proptabarbre %>%  kable(caption = "Proportion en fonction de la réalité") %>% 
+  kable_styling(
+  full_width = FALSE, position = "center",bootstrap_options = c("striped", "hover")) %>% add_header_above(c("","Réalité"=2))
+```
+
+```{r, echo=FALSE}
+data.frame(vi = tree$variable.importance, variable = names(tree$variable.importance)) %>%
+  ggplot() + aes(x= reorder(variable,vi), y = vi) + 
+  geom_col(width = 0.4, color = "steelblue", fill = "steelblue") +
+  coord_flip() + labs(y = "Mesure d'importance", x = NULL) + theme_minimal()
+```
+
+```{r, echo=FALSE}
+rec <- recipe(popularity ~ ., data = dfbis_train)
+tree_spec <- decision_tree() %>% 
+  set_engine("rpart") %>% 
+  set_mode("classification")
+```
+
+```{r, echo=FALSE}
+tune_tree_wf <- workflow() %>% 
+  add_model(tree_spec %>% 
+              set_args(cost_complexity = tune())
+            ) %>%
+  add_recipe(rec)
+
+df_cv <- vfold_cv(dfbis_train) 
+
+cost_complexity_grid <- grid_regular(cost_complexity(range = c(-5,-0.1)), 
+                                     levels = 15)
+ 
+tree_tune_res <- tune_grid(
+  tune_tree_wf, 
+  resamples = df_cv, 
+  grid = cost_complexity_grid, 
+  metrics = metric_set(accuracy) 
+)
+save(tree_tune_res, file ="tree_tune_res.RData")
+```
+
+```{r, echo=FALSE}
+autoplot(tree_tune_res) + theme_minimal()
+```
+
+```{r}
+best_cost_complexity <- select_best(tree_tune_res)
+```
+
+```{r}
+final_tune_tree_wf <- tune_tree_wf %>% 
+  finalize_workflow(best_cost_complexity)
+```
+
+```{r, echo=FALSE}
+tree_fit <- final_tune_tree_wf %>% last_fit(dfbis_split)
+```
+
+```{r, echo=FALSE}
+tree_fit %>% 
+  extract_fit_engine() %>% 
+  rpart.plot::prp(type = 0, extra = 1, split.box.col = "lightblue",
+                  roundint = FALSE)
+```
+
+```{r}
+tree_fit %>% pluck(".workflow", 1) %>%  pull_workflow_fit() %>% vip(num_features = 20) + theme_minimal()
+```
+
+```{r, echo=FALSE}
+final_model <-  final_tune_tree_wf %>% 
+  fit(dfbis) 
+```
+
+```{r, echo=FALSE}
+save(final_model, file = "final_model.RData")
+```
+
+```{r, echo=FALSE}
+mat <- augment(final_model, new_data=dfbis_test) %>% 
+  conf_mat(truth=popularity, estimate=.pred_class)
+matconf <- kable(mat$table,  caption = "Matrice de confusion") %>% kable_styling(full_width = FALSE, position = "center",bootstrap_options = c("striped", "hover")) %>% add_header_above(c("","Réalité"=2))
+matconf
+```
+
+```{r}
+ERR_tree <- round((mat$table[2]+mat$table[3])/sum(mat$table),3)
+ERR1_tree <- round(1-(mat$table[1]/(mat$table[1]+mat$table[2])),3)
+ERR2_tree <- round(1-(mat$table[4]/(mat$table[3]+mat$table[4])),3)
+```
+
+```{r, echo=FALSE}
+augment(final_model, new_data=dfbis_test) %>% 
+roc_curve(as.factor(popularity),.pred_Popular) %>% 
+autoplot()
+```
+
+```{r, echo=FALSE}
+tree_fit <- final_tune_tree_wf %>% last_fit(dfbis_split)
+tree_fit %>% collect_metrics() %>%  kable(caption = "Accuracy et AUC") %>% 
+  kable_styling(
+  full_width = FALSE, position = "center",bootstrap_options = c("striped", "hover"))
+```
+
+## Forêts aléatoires et bagging
+
+### Nombre d'arbres
+
+```{r, echo=FALSE}
+dfbis_train[,47] <- as.factor(dfbis_train[,47])
+
+rf <- randomForest(popularity ~ .,
+  data = dfbis_train, method = "class", 
+  parms = list(split = "gini"), ntree = 1000)
+save(rf, file = "rf.RData") 
+
+oob_rf_min <- min(rf$err.rate[,1])
+test_rf_min <- min(rf$err.rate[,2])
+test2_rf_min <- min(rf$err.rate[,3])
+
+best.ntrees <- which(abs(rf$err.rate[, 1] - oob_rf_min) < 0.0005) %>% min()
+
+best.ntrees.test <- which(abs(rf$err.rate[, 2] - test_rf_min) < 0.0005) %>% min()
+
+best.ntrees.test2 <- which(abs(rf$err.rate[, 3] - test2_rf_min) < 0.0005) %>% min()
+```
+
+```{r, echo=FALSE}
+nvar <- ncol(dfbis) - 1
+bag <- randomForest(popularity ~ ., 
+  data = dfbis_train, method = "class",
+  parms = list(split = "gini"), mtry = nvar, 
+  ntree = 1000)
+save(bag, file = "bag.RData")
+
+oob_bag_min <- min(bag$err.rate[,1])
+test_bag_min <- min(bag$err.rate[,2])
+test_bag_min <- min(bag$err.rate[,3])
+
+best.ntrees.bag <- which(abs(bag$err.rate[, 1] - oob_bag_min) < 0.0005) %>% min()
+```
+
+```{r, echo=FALSE}
+ggplot()+
+  geom_line(aes(1:1000, rf$err.rate[,1], color = "rf"))+ theme_minimal()+labs(y = ("Erreur"), x = ("Nombre d'arbres"), title = "Erreur OOB selon le nombre d'arbres")+
+  geom_line(aes(1:1000, bag$err.rate[,1], color = "bagging"))+ theme_minimal()+labs(y = ("Erreur"), x = ("Nombre d'arbres"))+
+  geom_vline(xintercept = best.ntrees, linetype = "dashed")+
+  geom_vline(xintercept = best.ntrees.bag, linetype = "dashed")+
+  annotate("text", label = "756", x = best.ntrees + 50, y = 0.4)+
+  annotate("text", label = "739", x = best.ntrees.bag - 50, y = 0.4)+
+  scale_color_manual(values=c("steelblue", "violetred")) + labs(color="Modèles")
+```
+
+```{r}
+best_bag <- randomForest(popularity ~ ., data = dfbis_train,
+                         method = "class", ntree = 450, 
+                         parms = list(split="gini"), mtry = nvar)
+save(best_bag, file = "best_bag.RData")
+
+best_bag_err <- round(mean(predict(best_bag, newdata = dfbis_test,
+                             type = "class") != dfbis_test[,47]),4)
+```
+
+```{r}
+best_rf <- randomForest(popularity ~ .,
+  data = dfbis_train, method = "class", ntree = 450,
+  parms = list(split = "gini")
+)
+save(best_rf, file = "best_rf.RData")
+
+test_best_rf <- round(mean(predict(best_rf, newdata = dfbis_test, type = "class")
+                          != dfbis_test[,47]),4)
+```
+
+```{r}
+rf_min <- randomForest(popularity ~ .,
+  data = dfbis_train, method = "class", ntree = best.ntrees,
+  parms = list(split = "gini")
+)
+save(rf_min, file = "rf_min.RData")
+
+test_rf_min <- round(mean(predict(rfq1, newdata = dfbis_test, type = "class")
+                          != dfbis_test[,47]),4)
+```
+
+```{r}
+bag_min <- randomForest(popularity ~ ., data = dfbis_train,
+                         method = "class", ntree = best.ntrees.bag, 
+                         parms = list(split="gini"), mtry = nvar)
+save(bag_min, file = "bag_min.RData")
+
+bag_min_err <- round(mean(predict(bag_min, newdata = dfbis_test,
+                             type = "class") != dfbis_test[,47]),4)
+```
+
+
+```{r}
+vec_erreur_test <- c(bag_min_err, test_rf_min)
+vec_nb_arbres <- c(best_bag_err, test_best_rf)
+tab3 <- data.frame(vec_erreur_test)
+tab3 <- cbind(tab3, vec_nb_arbres)
+colnames(tab3) <- c("Erreur test (ntree optimal)", "Erreur test (ntree = 450)")
+rownames(tab3) <- c("Bagging", "Random forest")
+tab3 %>%  kable(caption = "Erreurs random forest vs bagging") %>% 
+  kable_styling(
+  full_width = FALSE, position = "center",bootstrap_options = c("striped", "hover"))
+```
+
+### Nombre de variables
+
+```{r}
+rfq1 <- randomForest(popularity ~ .,
+  data = dfbis_train, method = "class", ntree = 450,
+  parms = list(split = "gini"), mtry = 1
+)
+save(rfq1, file = "rfq1.RData")
+
+rfq4 <- randomForest(popularity ~ .,
+  data = dfbis_train, method = "class", ntree = 450,
+  parms = list(split = "gini"), mtry = 4
+)
+save(rfq4, file = "rfq4.RData")
+
+rfq6 <- randomForest(popularity ~ .,
+  data = dfbis_train, method = "class", ntree = 450,
+  parms = list(split = "gini"), mtry = 6
+)
+save(rfq6, file = "rfq6.RData")
+
+rfq8 <- randomForest(popularity ~ .,
+  data = dfbis_train, method = "class", ntree = 450,
+  parms = list(split = "gini"), mtry = 8
+)
+save(rfq8, file = "rfq8.RData")
+
+rfq16 <- randomForest(popularity ~ .,
+  data = dfbis_train, method = "class", ntree = 450,
+  parms = list(split = "gini"), mtry = 16
+)
+save(rfq16, file = "rfq16.RData")
+
+rfq32 <- randomForest(popularity ~ .,
+  data = dfbis_train, method = "class", ntree = 450,
+  parms = list(split = "gini"), mtry = 32
+)
+save(rfq32, file = "rfq32.RData")
+```
+
+```{r}
+ggplot() + geom_line(aes(1:450, rfq1$err.rate[, 1], color="q = 1")) + 
+  geom_line(aes(1:450, rfq4$err.rate[, 1], color="q = 4")) +
+  geom_line(aes(1:450, rfq6$err.rate[, 1], color="q = 6"))+
+  geom_line(aes(1:450, rfq8$err.rate[, 1], color="q = 8")) +
+  geom_line(aes(1:450, rfq16$err.rate[, 1], color="q = 16")) +
+  geom_line(aes(1:450, rfq32$err.rate[, 1], color="q = 32"))+
+  labs(color = "Nombre de variables", title="Erreur OOB du Random Forest \n selon le nombre de variables", y = "Erreur OOB", x = "Nombre d'arbres")+theme_minimal()+  scale_color_manual(values=c("orange", "steelblue", "darkseagreen","black","lightsalmon4","violetred"))
+```
+
+```{r}
+test_rfq1 <- mean(predict(rfq1, newdata = dfbis_test, type = "class")
+                          != dfbis_test[,47])
+test_rfq4 <- mean(predict(rfq4, newdata = dfbis_test, type = "class")
+                          != dfbis_test[,47])
+test_rfq8 <- mean(predict(rfq8, newdata = dfbis_test, type = "class")
+                          != dfbis_test[,47])
+test_rfq16 <- mean(predict(rfq16, newdata = dfbis_test, type = "class")
+                          != dfbis_test[,47])
+test_rfq32 <- mean(predict(rfq32, newdata = dfbis_test, type = "class")
+                          != dfbis_test[,47])
+
+oob_rfq1_min <- min(rfq1$err.rate[,1])
+oob_rfq4_min <- min(rfq4$err.rate[,1])
+oob_rfq6_min <- min(rfq6$err.rate[,1])
+oob_rfq8_min <- min(rfq8$err.rate[,1])
+oob_rfq16_min <- min(rfq16$err.rate[,1])
+oob_rfq32_min <- min(rfq32$err.rate[,1])
+```
+
+```{r}
+vec_erreur_test_q <- round(c(test_rfq1, test_rfq4, test_rfq6, test_rfq8, test_rfq16, test_rfq32),4)
+vec_erreur_OOB_q <- round(c(oob_rfq1_min, oob_rfq4_min,oob_rfq6_min, oob_rfq8_min, oob_rfq16_min, oob_rfq32_min),4)
+tab_3 <- data.frame(vec_erreur_test_q)
+tab_3 <- cbind(tab_3, vec_erreur_OOB_q)
+colnames(tab_3) <- c("Err_test", "Err_OOB")
+rownames(tab_3) <- c("RF : q=1", "RF : q=4", "RF : q=6", "RF : q=8", "RF : q=16", "RF : q=32")
+tab_3 %>%  kable(caption = "Erreurs selon le nombre de variables") %>% 
+  kable_styling(
+  full_width = FALSE, position = "center",bootstrap_options = c("striped", "hover")) %>% add_header_above(c("","Type d'erreur"=2))
+```
+
+
+```{r}
+ggplot() + geom_line(aes(1:450, rfq4$err.rate[, 1], color="OOB")) + 
+  geom_line(aes(1:450, rfq4$err.rate[, 2], color="Popular")) +
+  geom_line(aes(1:450, rfq4$err.rate[, 3], color="Unpopular"))+
+  labs(color = "Modalités", title="Erreurs du meilleur modèle", y = "Erreur", x = "Nombre d'arbres")+theme_minimal()+  scale_color_manual(values=c("violetred", "steelblue", "darkseagreen"))
+```
+
+```{r}
+ERR_rf <- round(test_rfq4,3)
+
+ERR1_rf <- round(mean(predict(rfq4, newdata = dfbis_test[dfbis_test$popularity == "Popular",], type = "class")
+     != dfbis_test[dfbis_test$popularity == "Popular",47]),3)
+
+ERR2_rf <- round(mean(predict(rfq4, newdata = dfbis_test[dfbis_test$popularity == "Unpopular",], type = "class")
+     != dfbis_test[dfbis_test$popularity == "Unpopular",47]),3)
+```
+
+
+### Importance des variables
+
+```{r}
+varImpPlot(rfq4, cex = 0.75, main = "Importance des variables du meilleur \n modèle de forêt aléatoire (q = 4)", bg = "yellow")
+```
+
+## Boosting 
+
+```{r, echo=FALSE}
+boost <- ada(popularity ~ .,
+  data = dfbis_train, type = "discrete", loss = "exponential",
+  control = rpart.control(cp = 0), iter = 200, nu = 1, test.y=dfbis_test[,47],
+  test.x=dfbis_test[,-47]
+)
+
+save(boost, file = "boost.RData")
+```
+
+```{r}
+best_boost <- ada(popularity ~ .,
+  data = dfbis_train, type = "discrete", loss = "exponential",
+  control = rpart.control(cp = 0), iter = 500, nu = 1, test.y=dfbis_test[,47],
+  test.x=dfbis_test[,-47]
+)
+save(best_boost, file = "best_boost.RData")
+```
+
+```{r, echo=FALSE}
+booststump<- ada(popularity~., 
+                 data= dfbis_train, type="discrete", loss="exponential",
+                 control = rpart.control(maxdepth=1, cp=-1, minsplit=0, 
+                xval=0),iter=200, nu=1, test.y=dfbis_test[,47],
+                test.x=dfbis_test[,-47]
+)
+
+save(booststump, file = "booststump.RData")
+```
+
+```{r, echo=FALSE}
+boostpen01 <- ada(popularity ~ ., data = dfbis_train, type = "discrete", 
+  loss = "exponential", control = rpart.control(maxdepth = 1, cp = -1, minsplit = 0, xval = 0), 
+  iter = 200, nu = .01, test.y=dfbis_test[,47],
+  test.x=dfbis_test[,-47]
+)
+
+save(boostpen01, file = "boostpen01.RData")
+```
+
+```{r, echo=FALSE}
+boostpen001 <- ada(popularity ~ ., data = dfbis_train, type = "discrete", loss = "exponential", 
+  control = rpart.control(maxdepth = 1, cp = -1, minsplit = 0, xval = 0),  iter = 200, nu = .001, test.y=dfbis_test[,47],
+  test.x=dfbis_test[,-47]
+)
+
+save(boostpen001, file = "boostpen001.RData")
+```
+
+
+```{r, echo=FALSE}
+niter <- 200 
+data.frame(iter = 1:niter) %>% 
+  mutate(boost = boost$model$errs[1:niter, c("train.err")],
+         stump = booststump$model$errs[1:niter, c("train.err")],
+         pen01 = boostpen01$model$errs[1:niter, c("train.err")],
+         pen001 = boostpen001$model$errs[1:niter, c("train.err")]) %>%
+  pivot_longer(cols = 2:5, names_to = "model", values_to = "error") %>%
+  ggplot() + aes(x = iter, y = error, color = model) + geom_line() +
+  labs(title = "Differents modèles de boosting",subtitle =" et leurs erreurs en apprentissage", x = "Iterations", y = "Erreurs") + theme_minimal()+  scale_color_manual(values=c("steelblue", "violetred", "slategrey","black"))
+```
+
+```{r}
+niter <- 200
+1:niter %>% as_tibble() %>% 
+  rename("iter" = value) %>% 
+  mutate(boost_test = boost$model$errs[1:niter, 3],
+         booststump_test = booststump$model$errs[1:niter, 3],
+         boostpen01_test = boostpen01$model$errs[1:niter, 3],
+         boostpen001_test = boostpen001$model$errs[1:niter, 3]) %>%
+  pivot_longer(cols = 2:5, names_to = "model", values_to = "error") %>%
+  ggplot() + aes(x = iter, y = error, color = model) + geom_line() +
+  labs(title = "Differents modèles de boosting",subtitle =" et leurs erreurs en test", x = "Iterations", y = "Errors") +theme_minimal()+labs(color="Erreurs")+scale_color_manual(values=c("steelblue", "violetred", "slategrey","black"))
+```
+
+```{r}
+niter <- 500
+1:niter %>% as_tibble() %>% 
+  rename("iter" = value) %>% 
+  mutate( best_boost_test = best_boost$model$errs[1:niter, 3]) %>%
+  pivot_longer(cols = 2, names_to = "model", values_to = "error") %>%
+  ggplot() + aes(x = iter, y = error, color = model) + geom_line() +
+  labs(title = "Boosting", x = "Iterations", y = "Errors") +theme_minimal()+labs(color="Erreurs")+scale_color_manual(values=c("steelblue"))
+```
+
+```{r, echo=FALSE}
+nbr_iter<-c(50,100,200)
+tab_boostpen01<-c()
+tab_boostpen001<-c()
+tab_stump<-c()
+for (i in 1:3){
+    tab_boostpen01[i]<-round(mean(boostpen01$model$errs[nbr_iter[i],"test.err"]),3)
+    tab_boostpen001[i]<-round(mean(boostpen001$model$errs[nbr_iter[i],"test.err"]),3)
+    tab_stump[i]<-round(mean(booststump$model$errs[nbr_iter[i],"test.err"]),3)
+}
+for (i in 4:5){
+    tab_boostpen01[i]<- " "
+    tab_boostpen001[i]<- " "
+    tab_stump[i]<-" "
+}
+```
+
+```{r, echo=FALSE}
+nbr_iter<-c(50,100,200,350,400)
+tab_bestboost <- c()
+for (i in 1:5){
+    tab_bestboost[i]<-round(mean(best_boost$model$errs[nbr_iter[i],"test.err"]),3)
+}
+```
+
+```{r}
+meilleure_erreur<-rbind(tab_bestboost, tab_boostpen01,tab_boostpen001,tab_stump)
+colnames(meilleure_erreur)<-c(nbr_iter)
+row.names(meilleure_erreur)<-c("Boosting","Boost Pen 10%", "Boost Pen 1%", "Stump")
+meilleure_erreur %>% kable(caption = "Les erreurs en test des modèles") %>% 
+  kable_styling(
+  full_width = FALSE, position = "center",bootstrap_options = c("striped", "hover")) 
+```
+
+```{r, echo=FALSE}
+realite <- dfbis_test$popularity
+prediction <- predict(booststump, newdata = dfbis_test)
+tabstump <- table(prediction, realite)
+addmargins(tabstump) %>% kable(caption = "Matrice de confusion") %>% 
+  kable_styling(
+  full_width = FALSE, position = "center",bootstrap_options = c("striped", "hover")) %>% add_header_above(c("","Réalité"=2, ""))
+```
+
+```{r}
+ERR_stump <- round((tabstump[1,2] + tabstump[2,1]) / sum(tabstump),3)
+ERR1_stump <- round(1-(tabstump[2,2]/sum(tabstump[,2])),3)
+ERR2_stump <- round(1-(tabstump[1,1]/sum(tabstump[,1])),3)
+```
+
+
+# Comparaison 
+
+```{r}
+final_tab <- matrix(c(ERR_lda, ERR1_lda, ERR2_lda, ERR_qda, ERR1_qda, ERR2_qda, ERR_knn, ERR1_knn, ERR2_knn, ERR_tree, ERR1_tree, ERR2_tree, round(test_rfq4,3), NA, NA), byrow = TRUE, ncol = 3)
+rownames(final_tab) <- c("LDA", "QDA", "KNN", "Tree", "Random forest")
+colnames(final_tab) <- c("Erreur globale", "Faux populaires", "Faux impopulaires")
+
+final_tab %>% kable(caption = "Conclusion") %>% 
+  kable_styling(
+  full_width = FALSE, position = "center",bootstrap_options = c("striped", "hover")) 
+```
+
+
